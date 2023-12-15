@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,11 +25,12 @@ type RMQStore struct {
 	ChMap map[string]*amqp.Channel
 }
 
-func (store *RMQStore) publishData() {
+func (store *RMQStore) publishData(wg *sync.WaitGroup, cycles int, cycleInterval int) {
+	defer wg.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	for i := 0; i < 100; i++ {
+	slog.Info(fmt.Sprintf("Publishing %d cycles at an interval of %d milliseconds", cycles, cycleInterval))
+	for i := 0; i < cycles; i++ {
 		// Generate a new UUID for each sensor data
 		sensorID, err := uuid.NewUUID()
 		if err != nil {
@@ -65,8 +67,8 @@ func (store *RMQStore) publishData() {
 			failOnError(err, "Failed to publish a message")
 		}
 
-		slog.Info("Published message", "messageID", i)
-		time.Sleep(1 * time.Second)
+		// slog.Info("Published message", "messageID", i)
+		time.Sleep(time.Duration(cycleInterval) * time.Millisecond)
 	}
 }
 
@@ -145,6 +147,24 @@ func main() {
 
 	slog.Info("RabbitMQ Setup Compelted")
 
-	rmqStore.publishData()
+	var wg sync.WaitGroup
+	threads := 10
+	wg.Add(threads)
+	// for i := 0; i < threads; i++ {
+	// 	go rmqStore.publishData(&wg, 10000, 20)
+	// }
 
+	go rmqStore.publishData(&wg, 10000, 1000)
+	go rmqStore.publishData(&wg, 10000, 1000)
+	go rmqStore.publishData(&wg, 10000, 1000)
+	go rmqStore.publishData(&wg, 10000, 1000)
+	go rmqStore.publishData(&wg, 10000, 1000)
+	go rmqStore.publishData(&wg, 10000, 1000)
+	go rmqStore.publishData(&wg, 10000, 750)
+	go rmqStore.publishData(&wg, 10000, 100)
+	go rmqStore.publishData(&wg, 10000, 75)
+	go rmqStore.publishData(&wg, 10000, 20)
+
+	wg.Wait()
+	slog.Info("Finished publishing")
 }

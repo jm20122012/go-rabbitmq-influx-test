@@ -66,7 +66,7 @@ func consumeAndWrite(ch *amqp.Channel, influxClient influxdb2.Client) {
 	}
 
 	for msg := range msgs {
-		slog.Info("Received a message", "message", msg.Body)
+		// slog.Info("Received a message", "message", msg.Body)
 		var data SensorData
 		err := json.Unmarshal(msg.Body, &data)
 		if err != nil {
@@ -110,6 +110,7 @@ func main() {
 	influxClient := connectToInfluxDB()
 	defer influxClient.Close()
 
+	slog.Info("Starting consume and write...")
 	consumeAndWrite(rabbitCh, influxClient)
 }
 
