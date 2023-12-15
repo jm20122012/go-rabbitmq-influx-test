@@ -111,7 +111,7 @@ func main() {
 
 	err = ch.ExchangeDeclare(
 		"testDataExchange", // exchange name
-		"direct",           // exchange type
+		"fanout",           // exchange type
 		true,               // durable
 		false,              // auto-deleted
 		false,              // internal
@@ -120,24 +120,24 @@ func main() {
 	)
 	failOnError(err, "Failed to declare an exchange")
 
-	_, err = ch.QueueDeclare(
-		"testQueue1", // queue name
-		true,         // durable
-		false,        // delete when unused
-		false,        // exclusive
-		false,        // no-wait
-		nil,          // arguments
-	)
-	failOnError(err, "Failed to declare a queue")
+	// _, err = ch.QueueDeclare(
+	// 	"testQueue1", // queue name
+	// 	true,         // durable
+	// 	false,        // delete when unused
+	// 	false,        // exclusive
+	// 	false,        // no-wait
+	// 	nil,          // arguments
+	// )
+	// failOnError(err, "Failed to declare a queue")
 
-	err = ch.QueueBind(
-		"testQueue1",       // queue name
-		"",                 // routing key
-		"testDataExchange", // exchange
-		false,
-		nil,
-	)
-	failOnError(err, "Failed to bind a queue")
+	// err = ch.QueueBind(
+	// 	"testQueue1",       // queue name
+	// 	"",                 // routing key
+	// 	"testDataExchange", // exchange
+	// 	false,
+	// 	nil,
+	// )
+	// failOnError(err, "Failed to bind a queue")
 
 	rmqStore := RMQStore{
 		Conn:  conn,

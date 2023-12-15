@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -31,19 +32,38 @@ const (
 	queueName   = "testQueue1"
 )
 
-func connectToRabbitMQ() *amqp.Channel {
-	conn, err := amqp.Dial(rabbitMQURL)
+type RMQConn struct {
+	Conn       *amqp.Connection
+	ChannelMap map[string]*amqp.Channel
+}
+
+func (rmqConn *RMQConn) connectToRabbitMQ() {
+	c, err := amqp.Dial(rabbitMQURL)
 	if err != nil {
 		slog.Error("Failed to connect to RabbitMQ", "error", err)
 	}
 
-	ch, err := conn.Channel()
-	if err != nil {
-		slog.Error("Failed to open a channel", "error", err)
-	}
+	// ch, err := c.Channel()
+	// if err != nil {
+	// 	slog.Error("Failed to open a channel", "error", err)
+	// }
 
-	return ch
+	rmqConn.Conn = c
 }
+
+// func connectToRabbitMQ() *amqp.Channel {
+// 	conn, err := amqp.Dial(rabbitMQURL)
+// 	if err != nil {
+// 		slog.Error("Failed to connect to RabbitMQ", "error", err)
+// 	}
+
+// 	ch, err := conn.Channel()
+// 	if err != nil {
+// 		slog.Error("Failed to open a channel", "error", err)
+// 	}
+
+// 	return ch
+// }
 
 func connectToInfluxDB() influxdb2.Client {
 	slog.Info("Connecting to Influx with", "token", influxDBToken, "org", influxDBOrg, "bucket", influxDBBucket)
@@ -51,7 +71,8 @@ func connectToInfluxDB() influxdb2.Client {
 	return client
 }
 
-func consumeAndWrite(ch *amqp.Channel, influxClient influxdb2.Client) {
+func consumeAndWrite(wg *sync.WaitGroup, queueName string, ch *amqp.Channel, influxClient influxdb2.Client) {
+	defer wg.Done()
 	msgs, err := ch.Consume(
 		queueName, // queue
 		"",        // consumer
@@ -104,14 +125,97 @@ func main() {
 	influxDBOrg = os.Getenv("INFLUX_ORG")
 	influxDBBucket = os.Getenv("INFLUX_BUCKET")
 
-	rabbitCh := connectToRabbitMQ()
-	defer rabbitCh.Close()
+	var RMQ RMQConn
+	RMQ.connectToRabbitMQ()
+	RMQ.ChannelMap = make(map[string]*amqp.Channel)
+
+	// 	ch, err := conn.Channel()
+	// 	if err != nil {
+	// 		slog.Error("Failed to open a channel", "error", err)
+	// 	}
+
+	ch1, err := RMQ.Conn.Channel()
+	if err != nil {
+		slog.Error("Could not create channel 1", "error", err)
+	}
+	slog.Info("Created channel 1")
+	defer ch1.Close()
+
+	ch2, err := RMQ.Conn.Channel()
+	if err != nil {
+		slog.Error("Could not create channel 2", "error", err)
+	}
+	slog.Info("Created channel 2")
+	defer ch2.Close()
+
+	slog.Info("Creating queue for channel 1")
+	_, err = ch1.QueueDeclare(
+		"testQueue1", // queue name
+		true,         // durable
+		false,        // delete when unused
+		false,        // exclusive
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		slog.Error("Failed to create Queue for channel 1")
+	}
+
+	slog.Info("Binding channel 1 queue to exchange...")
+	err = ch1.QueueBind(
+		"testQueue1",       // queue name
+		"",                 // routing key
+		"testDataExchange", // exchange
+		false,
+		nil,
+	)
+	if err != nil {
+		slog.Error("Could not bind channel 1 queue to exchange", "error", err)
+	}
+
+	slog.Info("Creating queue for channel 2")
+	_, err = ch2.QueueDeclare(
+		"testQueue2", // queue name
+		true,         // durable
+		false,        // delete when unused
+		false,        // exclusive
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		slog.Error("Failed to create Queue for channel 2")
+	}
+
+	slog.Info("Binding channel 2 queue to exchange...")
+	err = ch2.QueueBind(
+		"testQueue2",       // queue name
+		"",                 // routing key
+		"testDataExchange", // exchange
+		false,
+		nil,
+	)
+	if err != nil {
+		slog.Error("Could not bind channel 2 queue to exchange", "error", err)
+	}
+
+	slog.Info("Adding queues to queue map...")
+	RMQ.ChannelMap["testQueue1"] = ch1
+	RMQ.ChannelMap["testQueue2"] = ch2
 
 	influxClient := connectToInfluxDB()
 	defer influxClient.Close()
 
 	slog.Info("Starting consume and write...")
-	consumeAndWrite(rabbitCh, influxClient)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	for key, val := range RMQ.ChannelMap {
+		slog.Info("Starting channel consume routine", "channel", key)
+		go consumeAndWrite(&wg, key, val, influxClient)
+	}
+
+	wg.Wait()
 }
 
 // func writeDataToInfluxDB(client influxdb2.Client, data SensorData) {
