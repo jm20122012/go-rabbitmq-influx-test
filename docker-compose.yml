@@ -1,0 +1,33 @@
+---
+version: "3"
+services:
+    rabbitmq-test:
+        container_name: rabbitmq-influx
+        image: rabbitmq:3.12.10-management 
+        ports:
+            - 5672:5672
+            - 15672:15672
+        restart: unless-stopped
+    
+    influxdb-test:
+        container_name: influxdb-test
+        image: influxdb:2.7.4
+        ports:
+            - 8086:8086
+        env_file:
+            - .env
+        environment:
+            DOCKER_INFLUXDB_INIT_MODE: "setup"
+            DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+            DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PW}
+            DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+            DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+        volumes:
+            - influx_data:/var/lib/influxdb2
+            - influx_config:/etc/influxdb2
+        restart: unless-stopped
+
+volumes:
+    influx_data:
+    influx_config:
+
